@@ -167,6 +167,10 @@ It does not own:
 - State subscriptions, routers, or maintained views. Those stay in Frontier state packages.
 - CRDT actors, updates, heads, branches, sync, awareness, rich text, or providers.
 
+## TypeScript
+
+The package ships ESM JavaScript plus `.d.ts` declarations for the root export and public subpaths. The package-local TypeScript source lives in `src/` and compiles directly to `dist/`; it is not copied from the monorepo root build output.
+
 ## Validation
 
 ```sh
@@ -186,14 +190,14 @@ Run the package-local benchmark:
 npm run bench
 ```
 
-Latest local package-gate run on Node v26.1.0, darwin arm64, 3 rounds:
+Latest local package benchmark on Node v26.1.0, darwin arm64, 3 rounds:
 
 | Fixture | Median | p95 |
 | --- | ---: | ---: |
-| Engine schema diff, 1k rows | 16.67 us | 17.45 us |
-| Engine apply via core patch | 0.58 us | 0.59 us |
-| Engine equality no-op | 9.32 us | 9.44 us |
-| Engine history encode/decode/apply | 3.97 us | 4.22 us |
+| Engine schema diff, 1k rows | 17.02 us | 17.53 us |
+| Engine apply via core patch | 0.58 us | 0.62 us |
+| Engine equality no-op | 9.08 us | 9.14 us |
+| Engine history encode/decode/apply | 4.13 us | 4.46 us |
 
 These are Frontier-only package measurements, not competitor comparisons.
 
