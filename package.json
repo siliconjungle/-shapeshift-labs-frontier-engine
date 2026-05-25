@@ -1,0 +1,46 @@
+{
+  "name": "@shapeshift-labs/frontier-engine",
+  "version": "0.0.1",
+  "description": "Reserved package name for the future Frontier planned diff engine package.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/siliconjungle/-shapeshift-labs-frontier-engine.git"
+  },
+  "homepage": "https://github.com/siliconjungle/-shapeshift-labs-frontier-engine#readme",
+  "bugs": {
+    "url": "https://github.com/siliconjungle/-shapeshift-labs-frontier-engine/issues"
+  },
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node -e \"import('./index.js').catch((error) => { if (!String(error && error.message).includes('reserved placeholder')) process.exit(1); })\""
+  },
+  "keywords": [
+    "frontier",
+    "engine",
+    "diff",
+    "adaptive",
+    "profile",
+    "reserved"
+  ]
+}
