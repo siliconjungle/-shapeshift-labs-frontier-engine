@@ -1,6 +1,6 @@
 {
   "name": "@shapeshift-labs/frontier-engine",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Stateful planned diff engine, adaptive profiles, and reusable diff planning for Frontier.",
   "type": "module",
   "license": "MIT",
