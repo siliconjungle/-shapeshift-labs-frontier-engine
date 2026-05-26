@@ -53,11 +53,13 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "npm run build && npm run typecheck && node test/smoke.mjs",
-    "prepack": "npm run test",
+    "readme:packages": "node benchmarks/package-readme-sections.mjs",
+    "readme:packages:check": "node benchmarks/package-readme-sections.mjs --check",
+    "prepack": "npm run readme:packages:check && npm run test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "fuzz": "npm run build && node test/fuzz.mjs --cases 400",
     "bench": "npm run build && node benchmarks/package-bench.mjs",
-    "pack:dry": "npm pack --dry-run"
+    "pack:dry": "npm run readme:packages:check && npm pack --dry-run"
   },
   "devDependencies": {
     "typescript": "^6.0.3"
