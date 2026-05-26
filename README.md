@@ -10,6 +10,9 @@ This package sits above [`@shapeshift-labs/frontier`](https://www.npmjs.com/pack
 
 ## Related Packages
 
+- [`@shapeshift-labs/frontier-state-cache-idb`](https://www.npmjs.com/package/@shapeshift-labs/frontier-state-cache-idb): IndexedDB persistence adapter for Frontier state-cache snapshots.
+- [`@shapeshift-labs/frontier-state-cache-file`](https://www.npmjs.com/package/@shapeshift-labs/frontier-state-cache-file): Structured file persistence adapter for Frontier state-cache snapshots and change logs.
+- [`@shapeshift-labs/frontier-state-cache-sql`](https://www.npmjs.com/package/@shapeshift-labs/frontier-state-cache-sql): SQL persistence adapter for Frontier state-cache snapshots and change logs.
 - [`@shapeshift-labs/frontier`](https://www.npmjs.com/package/@shapeshift-labs/frontier): core JSON diff/apply primitives.
 - [`@shapeshift-labs/frontier-codec`](https://www.npmjs.com/package/@shapeshift-labs/frontier-codec): patch serialization, binary frames, canonical JSON, and patch-history codecs.
 - [`@shapeshift-labs/frontier-query`](https://www.npmjs.com/package/@shapeshift-labs/frontier-query): shared query-key, selector path, condition, identity, and table-schema primitives.
@@ -17,6 +20,9 @@ This package sits above [`@shapeshift-labs/frontier`](https://www.npmjs.com/pack
 
 Package source repositories:
 
+- [`siliconjungle/-shapeshift-labs-frontier-state-cache-idb`](https://github.com/siliconjungle/-shapeshift-labs-frontier-state-cache-idb)
+- [`siliconjungle/-shapeshift-labs-frontier-state-cache-file`](https://github.com/siliconjungle/-shapeshift-labs-frontier-state-cache-file)
+- [`siliconjungle/-shapeshift-labs-frontier-state-cache-sql`](https://github.com/siliconjungle/-shapeshift-labs-frontier-state-cache-sql)
 - [`siliconjungle/-shapeshift-labs-frontier`](https://github.com/siliconjungle/-shapeshift-labs-frontier)
 - [`siliconjungle/-shapeshift-labs-frontier-codec`](https://github.com/siliconjungle/-shapeshift-labs-frontier-codec)
 - [`siliconjungle/-shapeshift-labs-frontier-query`](https://github.com/siliconjungle/-shapeshift-labs-frontier-query)
@@ -107,6 +113,25 @@ const engine = createDiffEngine({
 });
 ```
 
+### Numeric Quantization Profiles
+
+Quantization is opt-in engine/profile behavior for deterministic simulations, replay fixtures, and collaborative apps that want fixed-step numeric drift tolerance. It only runs inside schema/adaptive planned fields; default `diff()` and generic fallback semantics still preserve exact JSON numbers.
+
+```ts
+const engine = createDiffEngine({
+  schema: {
+    type: 'array',
+    path: ['bodies'],
+    key: 'id',
+    item: { type: 'object', fields: ['id', 'x', 'y'] }
+  },
+  quantization: [
+    { path: ['bodies', '*', 'x'], step: 0.001, fixedStep: true },
+    { path: ['bodies', '*', 'y'], step: 0.001, fixedStep: true }
+  ]
+});
+```
+
 ### Adaptive Profiles
 
 Adaptive engines can learn a profile from representative before/after pairs and replay that profile later.
@@ -180,7 +205,7 @@ npm run bench
 npm run pack:dry
 ```
 
-The package test suite covers root and subpath imports, schema diff/apply replay, profile snapshots, history planning, encoded history replay, and the absence of state/CRDT exports. The fuzzer covers schema and adaptive profile round-trips over record-array and object-shaped JSON.
+The package test suite covers root and subpath imports, schema diff/apply replay, profile snapshots, optional numeric quantization, history planning, encoded history replay, and the absence of state/CRDT exports. The fuzzer covers schema and adaptive profile round-trips over record-array and object-shaped JSON.
 
 ## Benchmarks
 
@@ -190,14 +215,17 @@ Run the package-local benchmark:
 npm run bench
 ```
 
-Latest local package benchmark on Node v26.1.0, darwin arm64, 3 rounds:
+Latest local package benchmark on Node v26.1.0, darwin arm64, 15 rounds:
 
 | Fixture | Median | p95 |
 | --- | ---: | ---: |
-| Engine schema diff, 1k rows | 17.02 us | 17.53 us |
-| Engine apply via core patch | 0.58 us | 0.62 us |
-| Engine equality no-op | 9.08 us | 9.14 us |
-| Engine history encode/decode/apply | 4.13 us | 4.46 us |
+| Core diff, 1k rows with arrayKey | 270.25 us | 279.41 us |
+| Engine schema diff, 1k rows | 13.85 us | 14.97 us |
+| Engine quantized schema diff, 1k rows | 148.42 us | 152.22 us |
+| Engine quantized drift no-op, 1k rows | 145.63 us | 159.05 us |
+| Engine apply via core patch | 0.40 us | 0.59 us |
+| Engine equality no-op | 9.59 us | 10.42 us |
+| Engine history encode/decode/apply | 3.55 us | 4.19 us |
 
 These are Frontier-only package measurements, not competitor comparisons.
 

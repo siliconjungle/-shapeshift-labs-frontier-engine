@@ -31,6 +31,7 @@ export interface ProfilePlans {
   codec?: CodecProfilePlan;
   state?: StateProfilePlan;
   crdt?: CrdtProfilePlan;
+  determinism?: DeterminismProfilePlan;
 }
 
 export interface DiffProfilePlan {
@@ -68,6 +69,22 @@ export interface StateProfilePlan {
 export interface CrdtProfilePlan {
   update?: 'auto' | 'json' | 'binary' | 'columnar-text';
   text?: 'chunked-ids' | 'native-piece';
+}
+
+export type NumericQuantizationMode = 'nearest' | 'floor' | 'ceil';
+
+export interface NumericQuantizationRule {
+  path?: JsonPath;
+  step: number;
+  offset?: number;
+  mode?: NumericQuantizationMode;
+  fixedStep?: boolean;
+}
+
+export interface DeterminismProfilePlan {
+  numeric?: 'quantized';
+  rules?: number;
+  fixedStep?: boolean;
 }
 
 export type SchemaField = ObjectKey | NestedObjectSchemaField;
@@ -124,6 +141,7 @@ export interface EngineProfileSettings {
   maxPatchOperations?: number | null;
   versionKey?: ObjectKey;
   fingerprintKey?: ObjectKey;
+  quantization?: NumericQuantizationRule[];
 }
 
 export interface EngineOptions<TValue extends JsonValue = JsonValue> extends DiffOptions<TValue> {
@@ -134,6 +152,7 @@ export interface EngineOptions<TValue extends JsonValue = JsonValue> extends Dif
   schema?: Schema | null;
   containerKeys?: ObjectKey[] | false | null;
   profile?: DiffProfile | null;
+  quantization?: NumericQuantizationRule[];
 }
 
 export type TrainingSample<TSource extends JsonValue = JsonValue, TTarget extends JsonValue = JsonValue> =
@@ -145,20 +164,20 @@ export interface DiffEngine {
   diff<TSource extends JsonValue, TTarget extends JsonValue>(
     source: TSource,
     target: TTarget,
-    options?: DiffOptions<TSource | TTarget>
+    options?: EngineOptions<TSource | TTarget>
   ): Patch;
 
   diffInto<TSource extends JsonValue, TTarget extends JsonValue>(
     source: TSource,
     target: TTarget,
     patch: Patch,
-    options?: DiffOptions<TSource | TTarget>
+    options?: EngineOptions<TSource | TTarget>
   ): Patch;
 
   equals<TSource extends JsonValue, TTarget extends JsonValue>(
     source: TSource,
     target: TTarget,
-    options?: DiffOptions<TSource | TTarget>
+    options?: EngineOptions<TSource | TTarget>
   ): boolean;
 
   diffHistory<TSource extends JsonValue, TTarget extends JsonValue>(

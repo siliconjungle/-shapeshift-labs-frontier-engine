@@ -1,0 +1,45 @@
+{
+  "package": "@shapeshift-labs/frontier-engine",
+  "version": "0.1.1",
+  "generatedAt": "2026-05-26T08:46:23.538Z",
+  "node": "v26.1.0",
+  "platform": "darwin arm64",
+  "rounds": 15,
+  "rows": [
+    {
+      "fixture": "Core diff, 1k rows with arrayKey",
+      "medianUs": 270.25,
+      "p95Us": 279.41
+    },
+    {
+      "fixture": "Engine schema diff, 1k rows",
+      "medianUs": 13.85,
+      "p95Us": 14.97
+    },
+    {
+      "fixture": "Engine quantized schema diff, 1k rows",
+      "medianUs": 148.42,
+      "p95Us": 152.22
+    },
+    {
+      "fixture": "Engine quantized drift no-op, 1k rows",
+      "medianUs": 145.63,
+      "p95Us": 159.05
+    },
+    {
+      "fixture": "Engine apply via core patch",
+      "medianUs": 0.4,
+      "p95Us": 0.59
+    },
+    {
+      "fixture": "Engine equality no-op",
+      "medianUs": 9.59,
+      "p95Us": 10.42
+    },
+    {
+      "fixture": "Engine history encode/decode/apply",
+      "medianUs": 3.55,
+      "p95Us": 4.19
+    }
+  ]
+}

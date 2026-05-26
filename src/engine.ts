@@ -39,6 +39,7 @@ import type {
   JsonPath,
   JsonObject,
   JsonValue,
+  NumericQuantizationRule,
   ObjectKey,
   Patch,
   PatchOperation,
@@ -101,6 +102,10 @@ type NormalizedRecordArrayPlanSchema = {
 
 type ProfileSettingsSnapshot = EngineProfileSettings & Record<string, unknown>;
 
+type QuantizationContext = {
+  rules: NumericQuantizationRule[];
+};
+
 type AdaptiveShape =
   | {
       kind: 'recordArray';
@@ -161,7 +166,7 @@ export function createDiffEngine(defaultOptions?: EngineOptions): DiffEngine {
   const tokenEntries = [];
   const plannedHistoryStrategyOut: { value: HistoryPlanStrategy | null } = { value: null };
 
-  function diff(source: JsonValue, target: JsonValue, options?: DiffOptions): Patch {
+  function diff(source: JsonValue, target: JsonValue, options?: EngineOptions): Patch {
     return diffInto(source, target, [], options);
   }
 
@@ -207,7 +212,7 @@ export function createDiffEngine(defaultOptions?: EngineOptions): DiffEngine {
     return createPatchHistoryBuilder();
   }
 
-  function diffInto(source: JsonValue, target: JsonValue, patch: Patch, options?: DiffOptions): Patch {
+  function diffInto(source: JsonValue, target: JsonValue, patch: Patch, options?: EngineOptions): Patch {
     if (!Array.isArray(patch)) {
       throw new TypeError('patch output must be an array');
     }
@@ -294,7 +299,7 @@ export function createDiffEngine(defaultOptions?: EngineOptions): DiffEngine {
     return patch;
   }
 
-  function equals(source: JsonValue, target: JsonValue, options?: DiffOptions): boolean {
+  function equals(source: JsonValue, target: JsonValue, options?: EngineOptions): boolean {
     const mergedOptions = mergeOptions(effectiveOptions, options);
     validateAdaptiveOption(mergedOptions);
 
@@ -922,6 +927,67 @@ function mergeOptions(baseOptions, options) {
   return { ...baseOptions, ...callOptions };
 }
 
+function readQuantizationContext(options): QuantizationContext | null {
+  if (!options || options.quantization === undefined || options.quantization === null) return null;
+  const rules = readQuantizationRules(options.quantization, 'quantization');
+  return rules === undefined || rules.length === 0 ? null : { rules };
+}
+
+function readQuantizationRules(value, label): NumericQuantizationRule[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) {
+    throw new TypeError(label + ' option must be an array of numeric quantization rules');
+  }
+  const rules: NumericQuantizationRule[] = [];
+  for (let i = 0, length = value.length; i < length; i++) {
+    const item = value[i];
+    const itemLabel = label + '[' + i + ']';
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      throw new TypeError(itemLabel + ' must be an object');
+    }
+    const rule = item as NumericQuantizationRule;
+    if (typeof rule.step !== 'number' || !Number.isFinite(rule.step) || rule.step <= 0 || Object.is(rule.step, -0)) {
+      throw new TypeError(itemLabel + '.step must be a positive finite number');
+    }
+    if (
+      rule.offset !== undefined &&
+      (typeof rule.offset !== 'number' || !Number.isFinite(rule.offset))
+    ) {
+      throw new TypeError(itemLabel + '.offset must be a finite number');
+    }
+    if (rule.mode !== undefined && rule.mode !== 'nearest' && rule.mode !== 'floor' && rule.mode !== 'ceil') {
+      throw new TypeError(itemLabel + '.mode must be "nearest", "floor", or "ceil"');
+    }
+    if (rule.fixedStep !== undefined && typeof rule.fixedStep !== 'boolean') {
+      throw new TypeError(itemLabel + '.fixedStep must be a boolean');
+    }
+    const normalized: NumericQuantizationRule = {
+      step: rule.step
+    };
+    if (rule.path !== undefined && rule.path !== null) normalized.path = readQuantizationRulePath(rule.path, itemLabel + '.path');
+    if (rule.offset !== undefined) normalized.offset = rule.offset;
+    if (rule.mode !== undefined) normalized.mode = rule.mode;
+    if (rule.fixedStep !== undefined) normalized.fixedStep = rule.fixedStep;
+    rules[rules.length] = normalized;
+  }
+  return rules;
+}
+
+function readQuantizationRulePath(value, label): JsonPath {
+  if (!Array.isArray(value)) {
+    throw new TypeError(label + ' must be an array of strings or numbers');
+  }
+  const out: JsonPath = new Array(value.length);
+  for (let i = 0, length = value.length; i < length; i++) {
+    const segment = value[i];
+    if (typeof segment !== 'string' && typeof segment !== 'number') {
+      throw new TypeError(label + ' segments must be strings or numbers');
+    }
+    out[i] = segment;
+  }
+  return out;
+}
+
 function omitProfileOption(options) {
   if (options === undefined || options === null || options.profile === undefined) return options;
   const out = { ...options };
@@ -1385,10 +1451,11 @@ function readSchemaKey(schema) {
 }
 
 function tryPlannedDiff(plan, source, target, patch, options) {
+  const quantization = readQuantizationContext(options);
   if (plan.type === 'multi') {
     const startLength = patch.length;
     for (let i = 0, length = plan.plans.length; i < length; i++) {
-      if (!tryPlannedDiffOnly(plan.plans[i], source, target, patch)) {
+      if (!tryPlannedDiffOnly(plan.plans[i], source, target, patch, quantization)) {
         patch.length = startLength;
         return false;
       }
@@ -1405,7 +1472,7 @@ function tryPlannedDiff(plan, source, target, patch, options) {
     const targetValue = readPlanPathValue(target, plan.path);
     if (sourceValue === MISSING_PLAN_VALUE || targetValue === MISSING_PLAN_VALUE) return false;
     if (!exactPlanRegionMatches(plan, sourceValue, targetValue)) return false;
-    if (!tryRecordArrayDiff(plan, sourceValue, targetValue, patch)) return false;
+    if (!tryRecordArrayDiff(plan, sourceValue, targetValue, patch, quantization)) return false;
     if (
       plan.path.length !== 0 &&
       !appendOutsidePlanPathDiff(source, target, plan.path, 0, [], patch, options)
@@ -1421,7 +1488,7 @@ function tryPlannedDiff(plan, source, target, patch, options) {
     const targetValue = readPlanPathValue(target, plan.path);
     if (sourceValue === MISSING_PLAN_VALUE || targetValue === MISSING_PLAN_VALUE) return false;
     if (!exactPlanRegionMatches(plan, sourceValue, targetValue)) return false;
-    if (!tryObjectDiff(plan, sourceValue, targetValue, patch)) return false;
+    if (!tryObjectDiff(plan, sourceValue, targetValue, patch, quantization)) return false;
     if (
       plan.path.length !== 0 &&
       !appendOutsidePlanPathDiff(source, target, plan.path, 0, [], patch, options)
@@ -1434,7 +1501,7 @@ function tryPlannedDiff(plan, source, target, patch, options) {
   return false;
 }
 
-function tryPlannedDiffOnly(plan, source, target, patch) {
+function tryPlannedDiffOnly(plan, source, target, patch, quantization: QuantizationContext | null) {
   if (plan.type === 'recordArray') {
     const sourceValue = readPlanPathValue(source, plan.path);
     const targetValue = readPlanPathValue(target, plan.path);
@@ -1442,7 +1509,7 @@ function tryPlannedDiffOnly(plan, source, target, patch) {
       sourceValue !== MISSING_PLAN_VALUE &&
       targetValue !== MISSING_PLAN_VALUE &&
       exactPlanRegionMatches(plan, sourceValue, targetValue) &&
-      tryRecordArrayDiff(plan, sourceValue, targetValue, patch)
+      tryRecordArrayDiff(plan, sourceValue, targetValue, patch, quantization)
     );
   }
 
@@ -1453,7 +1520,7 @@ function tryPlannedDiffOnly(plan, source, target, patch) {
       sourceValue !== MISSING_PLAN_VALUE &&
       targetValue !== MISSING_PLAN_VALUE &&
       exactPlanRegionMatches(plan, sourceValue, targetValue) &&
-      tryObjectDiff(plan, sourceValue, targetValue, patch)
+      tryObjectDiff(plan, sourceValue, targetValue, patch, quantization)
     );
   }
 
@@ -1465,8 +1532,11 @@ function tryPlannedDiffOnly(plan, source, target, patch) {
 }
 
 function tryPlannedEquals(plan, source, target, options): boolean | null {
-  const exact = tryPlannedEqualsNoPatch(plan, source, target);
-  if (exact === true) return true;
+  const quantization = readQuantizationContext(options);
+  if (quantization === null) {
+    const exact = tryPlannedEqualsNoPatch(plan, source, target);
+    if (exact === true) return true;
+  }
 
   const patch: Patch = [];
   return tryPlannedDiff(plan, source, target, patch, options) && patch.length === 0 ? true : null;
@@ -1724,19 +1794,19 @@ function appendGenericDiffAtPath(source, target, prefix, patch, options) {
   }
 }
 
-function tryRecordArrayDiff(plan, source, target, patch) {
-  if (plan.compiled !== null) {
+function tryRecordArrayDiff(plan, source, target, patch, quantization: QuantizationContext | null) {
+  if (quantization === null && plan.compiled !== null) {
     const startLength = patch.length;
     if (plan.compiled(source, target, patch)) return true;
     patch.length = startLength;
-    return plan.key !== undefined && tryKeyedRecordArrayPlanDiff(plan, source, target, patch);
+    return plan.key !== undefined && tryKeyedRecordArrayPlanDiff(plan, source, target, patch, quantization);
   }
 
   if (plan.flatKeys !== null) {
     const startLength = patch.length;
-    if (tryFlatRecordArrayDiff(plan, source, target, patch)) return true;
+    if (tryFlatRecordArrayDiff(plan, source, target, patch, quantization)) return true;
     patch.length = startLength;
-    return plan.key !== undefined && tryKeyedRecordArrayPlanDiff(plan, source, target, patch);
+    return plan.key !== undefined && tryKeyedRecordArrayPlanDiff(plan, source, target, patch, quantization);
   }
 
   if (!Array.isArray(source) || !Array.isArray(target)) return false;
@@ -1792,23 +1862,27 @@ function tryRecordArrayDiff(plan, source, target, patch) {
         patch.length = startLength;
         return false;
       }
-      if (sameJsonValue(sourceValue, targetValue)) continue;
+      const comparison = quantization === null
+        ? null
+        : comparePlannedFieldValues(sourceValue, targetValue, quantization, makePlannedRecordFieldPath(plan, field.path));
+      if (comparison === null ? sameJsonValue(sourceValue, targetValue) : comparison.same) continue;
+      const plannedTargetValue = comparison === null ? targetValue : comparison.targetValue;
 
       if (field.path.length === 1) {
         const key = field.path[0];
         changeCount++;
         if (changeCount === 1) {
           changeKey = key;
-          changeValue = targetValue;
+          changeValue = plannedTargetValue;
         } else {
           if (assign === null) {
             assign = {};
             assign[changeKey] = clonePayload(changeValue);
           }
-          assign[key] = clonePayload(targetValue);
+          assign[key] = clonePayload(plannedTargetValue);
         }
       } else {
-        patch[patch.length] = [OP_SET, makeRecordPath(plan.path, i, field.path), clonePayload(targetValue)];
+        patch[patch.length] = [OP_SET, makeRecordPath(plan.path, i, field.path), clonePayload(plannedTargetValue)];
       }
     }
 
@@ -1822,7 +1896,7 @@ function tryRecordArrayDiff(plan, source, target, patch) {
   return true;
 }
 
-function tryKeyedRecordArrayPlanDiff(plan, source, target, patch) {
+function tryKeyedRecordArrayPlanDiff(plan, source, target, patch, quantization: QuantizationContext | null) {
   if (plan.key === undefined || !Array.isArray(source) || !Array.isArray(target)) return false;
 
   const startLength = patch.length;
@@ -1916,7 +1990,7 @@ function tryKeyedRecordArrayPlanDiff(plan, source, target, patch) {
     const sourceIndex = sourceKeyToIndex.get(targetKeys[targetIndex]);
     if (sourceIndex === undefined) continue;
     if (
-      !appendKeyedRecordArrayPlanRowDiff(plan, source[sourceIndex], target[targetIndex], targetIndex, patch, batch)
+      !appendKeyedRecordArrayPlanRowDiff(plan, source[sourceIndex], target[targetIndex], targetIndex, patch, batch, quantization)
     ) {
       patch.length = startLength;
       return false;
@@ -1927,7 +2001,7 @@ function tryKeyedRecordArrayPlanDiff(plan, source, target, patch) {
   return true;
 }
 
-function appendKeyedRecordArrayPlanRowDiff(plan, sourceRow, targetRow, targetIndex, patch, batch) {
+function appendKeyedRecordArrayPlanRowDiff(plan, sourceRow, targetRow, targetIndex, patch, batch, quantization: QuantizationContext | null) {
   if (!isPlanRecordRow(sourceRow) || !isPlanRecordRow(targetRow)) return false;
 
   const fields = plan.fields;
@@ -1948,24 +2022,28 @@ function appendKeyedRecordArrayPlanRowDiff(plan, sourceRow, targetRow, targetInd
       ? readOwnValue(targetRow, field.path[0])
       : readPlanPathValue(targetRow, field.path);
     if (sourceValue === MISSING_PLAN_VALUE || targetValue === MISSING_PLAN_VALUE) return false;
-    if (sameJsonValue(sourceValue, targetValue)) continue;
+    const comparison = quantization === null
+      ? null
+      : comparePlannedFieldValues(sourceValue, targetValue, quantization, makePlannedRecordFieldPath(plan, field.path));
+    if (comparison === null ? sameJsonValue(sourceValue, targetValue) : comparison.same) continue;
+    const plannedTargetValue = comparison === null ? targetValue : comparison.targetValue;
 
     if (field.path.length === 1) {
       const key = field.path[0];
       changeCount++;
       if (changeCount === 1) {
         changeKey = key;
-        changeValue = targetValue;
+        changeValue = plannedTargetValue;
       } else {
         if (assign === null) {
           assign = {};
           assign[changeKey] = clonePayload(changeValue);
         }
-        assign[key] = clonePayload(targetValue);
+        assign[key] = clonePayload(plannedTargetValue);
       }
     } else {
       flushKeyedRecordArrayPlanBatch(plan, patch, batch);
-      patch[patch.length] = [OP_SET, makeRecordPath(plan.path, targetIndex, field.path), clonePayload(targetValue)];
+      patch[patch.length] = [OP_SET, makeRecordPath(plan.path, targetIndex, field.path), clonePayload(plannedTargetValue)];
     }
   }
 
@@ -2039,8 +2117,8 @@ function movePlannedKey(keys, from, to) {
   keys[to] = value;
 }
 
-function tryObjectDiff(plan, source, target, patch) {
-  if (plan.compiled !== null) {
+function tryObjectDiff(plan, source, target, patch, quantization: QuantizationContext | null) {
+  if (quantization === null && plan.compiled !== null) {
     return plan.compiled(source, target, patch);
   }
 
@@ -2075,10 +2153,14 @@ function tryObjectDiff(plan, source, target, patch) {
       patch.length = startLength;
       return false;
     }
-    if (sameJsonValue(sourceValue, targetValue)) continue;
+    const comparison = quantization === null
+      ? null
+      : comparePlannedFieldValues(sourceValue, targetValue, quantization, makePlannedObjectFieldPath(plan, field.path));
+    if (comparison === null ? sameJsonValue(sourceValue, targetValue) : comparison.same) continue;
+    const plannedTargetValue = comparison === null ? targetValue : comparison.targetValue;
 
     if (field.path.length === 1) {
-      if (!canAssignPlannedValue(sourceValue, targetValue)) {
+      if (!canAssignPlannedValue(sourceValue, plannedTargetValue)) {
         patch.length = startLength;
         return false;
       }
@@ -2087,16 +2169,16 @@ function tryObjectDiff(plan, source, target, patch) {
       changeCount++;
       if (changeCount === 1) {
         changeKey = key;
-        changeValue = targetValue;
+        changeValue = plannedTargetValue;
       } else {
         if (assign === null) {
           assign = {};
           assign[changeKey] = clonePayload(changeValue);
         }
-        assign[key] = clonePayload(targetValue);
+        assign[key] = clonePayload(plannedTargetValue);
       }
     } else {
-      patch[patch.length] = [OP_SET, makeObjectPath(plan.path, field.path), clonePayload(targetValue)];
+      patch[patch.length] = [OP_SET, makeObjectPath(plan.path, field.path), clonePayload(plannedTargetValue)];
     }
   }
 
@@ -2109,8 +2191,8 @@ function tryObjectDiff(plan, source, target, patch) {
   return true;
 }
 
-function tryFlatRecordArrayDiff(plan, source, target, patch) {
-  if (plan.compiled !== null) {
+function tryFlatRecordArrayDiff(plan, source, target, patch, quantization: QuantizationContext | null) {
+  if (quantization === null && plan.compiled !== null) {
     return plan.compiled(source, target, patch);
   }
 
@@ -2166,18 +2248,22 @@ function tryFlatRecordArrayDiff(plan, source, target, patch) {
         patch.length = startLength;
         return false;
       }
-      if (sameJsonValue(sourceValue, targetValue)) continue;
+      const comparison = quantization === null
+        ? null
+        : comparePlannedFieldValues(sourceValue, targetValue, quantization, makePlannedRecordFieldPath(plan, [key]));
+      if (comparison === null ? sameJsonValue(sourceValue, targetValue) : comparison.same) continue;
+      const plannedTargetValue = comparison === null ? targetValue : comparison.targetValue;
 
       changeCount++;
       if (changeCount === 1) {
         changeKey = key;
-        changeValue = targetValue;
+        changeValue = plannedTargetValue;
       } else {
         if (assign === null) {
           assign = {};
           assign[changeKey] = clonePayload(changeValue);
         }
-        assign[key] = clonePayload(targetValue);
+        assign[key] = clonePayload(plannedTargetValue);
       }
     }
 
@@ -3029,6 +3115,79 @@ function canAssignPlannedValue(source, target) {
   return !(typeof source === 'string' && typeof target === 'string' && (source.length >= 32 || target.length >= 32));
 }
 
+function comparePlannedFieldValues(
+  sourceValue,
+  targetValue,
+  quantization: QuantizationContext,
+  path: JsonPath
+): { same: boolean; targetValue: unknown } {
+  const rule = typeof targetValue === 'number' && Number.isFinite(targetValue)
+    ? findQuantizationRule(quantization, path)
+    : null;
+  if (rule === null) {
+    return { same: sameJsonValue(sourceValue, targetValue), targetValue };
+  }
+
+  const quantizedTarget = quantizeNumber(targetValue, rule);
+  if (typeof sourceValue !== 'number' || !Number.isFinite(sourceValue)) {
+    return { same: false, targetValue: quantizedTarget };
+  }
+  return {
+    same: sameJsonValue(quantizeNumber(sourceValue, rule), quantizedTarget),
+    targetValue: quantizedTarget
+  };
+}
+
+function findQuantizationRule(quantization: QuantizationContext, path: JsonPath): NumericQuantizationRule | null {
+  const rules = quantization.rules;
+  for (let i = rules.length - 1; i >= 0; i--) {
+    const rule = rules[i];
+    if (rule.path === undefined || rule.path.length === 0 || quantizationPathMatches(rule.path, path)) return rule;
+  }
+  return null;
+}
+
+function quantizationPathMatches(rulePath: JsonPath, path: JsonPath): boolean {
+  if (rulePath.length !== path.length) return false;
+  for (let i = 0, length = rulePath.length; i < length; i++) {
+    const segment = rulePath[i];
+    if (segment !== '*' && segment !== path[i]) return false;
+  }
+  return true;
+}
+
+function quantizeNumber(value: number, rule: NumericQuantizationRule): number {
+  const step = rule.step;
+  const offset = rule.offset === undefined ? 0 : rule.offset;
+  const scaled = (value - offset) / step;
+  let bucket;
+  if (rule.mode === 'floor') {
+    bucket = Math.floor(scaled);
+  } else if (rule.mode === 'ceil') {
+    bucket = Math.ceil(scaled);
+  } else {
+    bucket = Math.round(scaled);
+  }
+  const quantized = roundQuantizedNumber(offset + bucket * step);
+  return Object.is(quantized, -0) ? 0 : quantized;
+}
+
+function roundQuantizedNumber(value: number): number {
+  if (!Number.isFinite(value) || value === 0) return value;
+  return Math.round((value + Number.EPSILON * Math.sign(value)) * 1e12) / 1e12;
+}
+
+function makePlannedObjectFieldPath(plan, fieldPath: JsonPath): JsonPath {
+  return makeObjectPath(plan.path, fieldPath);
+}
+
+function makePlannedRecordFieldPath(plan, fieldPath: JsonPath): JsonPath {
+  const out = plan.path.slice();
+  out[out.length] = '*';
+  for (let i = 0, length = fieldPath.length; i < length; i++) out[out.length] = fieldPath[i];
+  return out;
+}
+
 function makeObjectPath(prefix, suffix) {
   if (!Array.isArray(suffix)) {
     if (prefix.length === 0) return [suffix];
@@ -3140,6 +3299,8 @@ function createProfileSettings(options, maxEntries, adaptive) {
     copyProfileSetting(settings, options, 'maxPatchOperations', isNonNegativeSafeIntegerOrNull);
     copyProfileSetting(settings, options, 'versionKey', isJsonProfileScalar);
     copyProfileSetting(settings, options, 'fingerprintKey', isJsonProfileScalar);
+    const quantization = readQuantizationRules(options.quantization, 'quantization');
+    if (quantization !== undefined && quantization.length !== 0) settings.quantization = quantization;
   }
 
   return settings;

@@ -51,17 +51,29 @@ function formatUs(value) { return value >= 1000 ? (value / 1000).toFixed(2) + ' 
 function padRight(value, width) { return String(value).padEnd(width); }
 function padLeft(value, width) { return String(value).padStart(width); }
 
-import { applyPatchImmutable } from '@shapeshift-labs/frontier';
+import { applyPatchImmutable, diff } from '@shapeshift-labs/frontier';
 import { createDiffEngine } from '../dist/index.js';
 
 const before = { rows: makeRows(1000), meta: { version: 1 } };
 const after = cloneJson(before);
 after.rows[512] = { ...after.rows[512], score: 9999 };
 after.meta.version = 2;
-const engine = createDiffEngine({ schema: { type: 'array', path: ['rows'], key: 'id', item: { type: 'object', fields: ['id', 'score', 'active', 'label'] } } });
+const schema = { type: 'array', path: ['rows'], key: 'id', item: { type: 'object', fields: ['id', 'score', 'active', 'label'] } };
+const engine = createDiffEngine({ schema });
+const quantizedEngine = createDiffEngine({
+  schema,
+  quantization: [{ path: ['rows', '*', 'score'], step: 0.25, fixedStep: true }]
+});
 const patch = engine.diff(before, after);
+const quantizedAfter = cloneJson(before);
+quantizedAfter.rows[512] = { ...quantizedAfter.rows[512], score: quantizedAfter.rows[512].score + 0.2 };
+const driftAfter = cloneJson(before);
+driftAfter.rows[512] = { ...driftAfter.rows[512], score: driftAfter.rows[512].score + 0.11 };
 const rows = [
+  runRow('Core diff, 1k rows with arrayKey', 300, () => { sink += diff(before, after, { arrayKey: 'id' }).length; }),
   runRow('Engine schema diff, 1k rows', 300, () => { sink += engine.diff(before, after).length; }),
+  runRow('Engine quantized schema diff, 1k rows', 300, () => { sink += quantizedEngine.diff(before, quantizedAfter).length; }),
+  runRow('Engine quantized drift no-op, 1k rows', 300, () => { sink += quantizedEngine.diff(before, driftAfter).length; }),
   runRow('Engine apply via core patch', 3000, () => { sink += applyPatchImmutable(before, patch).rows.length; }),
   runRow('Engine equality no-op', 3000, () => { if (engine.equals(before, before)) sink++; }),
   runRow('Engine history encode/decode/apply', 1000, () => { const bytes = engine.encodeHistory([patch]); sink += engine.applyEncodedHistory(before, bytes).rows.length; })

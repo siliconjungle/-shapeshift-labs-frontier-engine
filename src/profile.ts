@@ -1,6 +1,7 @@
 import type {
   CodecProfilePlan,
   CrdtProfilePlan,
+  DeterminismProfilePlan,
   DiffProfilePlan,
   EqualityProfilePlan,
   HistoryProfilePlan,
@@ -50,6 +51,9 @@ export function mergeProfilePlans(...items: Array<ProfilePlans | undefined>): Pr
     if (normalized.codec !== undefined) out.codec = { ...(out.codec || {}), ...normalized.codec };
     if (normalized.state !== undefined) out.state = { ...(out.state || {}), ...normalized.state };
     if (normalized.crdt !== undefined) out.crdt = { ...(out.crdt || {}), ...normalized.crdt };
+    if (normalized.determinism !== undefined) {
+      out.determinism = { ...(out.determinism || {}), ...normalized.determinism };
+    }
   }
   return out === undefined || Object.keys(out).length === 0 ? undefined : out;
 }
@@ -69,6 +73,8 @@ export function createEngineProfilePlansSnapshot(
       history: 'binary'
     }
   };
+  const determinism = createDeterminismPlan(snapshot);
+  if (determinism !== undefined) generated.determinism = determinism;
   return mergeProfilePlans(inherited, generated);
 }
 
@@ -129,6 +135,24 @@ function createEqualityPlan(snapshot: EngineProfilePlanSnapshot): EqualityProfil
   };
 }
 
+function createDeterminismPlan(snapshot: EngineProfilePlanSnapshot): DeterminismProfilePlan | undefined {
+  const settings = snapshot.settings || {};
+  const quantization = settings.quantization;
+  if (!Array.isArray(quantization) || quantization.length === 0) return undefined;
+  const plan: DeterminismProfilePlan = {
+    numeric: 'quantized',
+    rules: quantization.length
+  };
+  for (let i = 0, length = quantization.length; i < length; i++) {
+    const rule = quantization[i];
+    if (rule && typeof rule === 'object' && (rule as { fixedStep?: unknown }).fixedStep === true) {
+      plan.fixedStep = true;
+      break;
+    }
+  }
+  return plan;
+}
+
 function normalizeProfilePlans(value: unknown, label: string): ProfilePlans {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError(label + ' must be an object');
@@ -141,6 +165,7 @@ function normalizeProfilePlans(value: unknown, label: string): ProfilePlans {
   if (input.codec !== undefined) out.codec = normalizeCodecPlan(input.codec, label + '.codec');
   if (input.state !== undefined) out.state = normalizeStatePlan(input.state, label + '.state');
   if (input.crdt !== undefined) out.crdt = normalizeCrdtPlan(input.crdt, label + '.crdt');
+  if (input.determinism !== undefined) out.determinism = normalizeDeterminismPlan(input.determinism, label + '.determinism');
   return out;
 }
 
@@ -249,6 +274,21 @@ function normalizeCrdtPlan(value: unknown, label: string): CrdtProfilePlan {
   if (input.text !== undefined) {
     if (input.text !== 'chunked-ids' && input.text !== 'native-piece') throw new TypeError(label + '.text is invalid');
     out.text = input.text;
+  }
+  return out;
+}
+
+function normalizeDeterminismPlan(value: unknown, label: string): DeterminismProfilePlan {
+  const input = readPlanObject<DeterminismProfilePlan>(value, label);
+  const out: DeterminismProfilePlan = {};
+  if (input.numeric !== undefined) {
+    if (input.numeric !== 'quantized') throw new TypeError(label + '.numeric is invalid');
+    out.numeric = input.numeric;
+  }
+  if (input.rules !== undefined) out.rules = readNonNegativeInteger(input.rules, label + '.rules');
+  if (input.fixedStep !== undefined) {
+    if (typeof input.fixedStep !== 'boolean') throw new TypeError(label + '.fixedStep must be a boolean');
+    out.fixedStep = input.fixedStep;
   }
   return out;
 }

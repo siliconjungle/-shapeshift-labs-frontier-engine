@@ -1,3 +1,3 @@
 export { createDiffEngine } from './engine.js';
 export { cloneProfilePlans, createCrdtProfilePlansSnapshot, createEngineProfilePlansSnapshot, createStateProfilePlansSnapshot, mergeProfilePlans, readProfilePlans } from './profile.js';
-export type { CodecProfilePlan, CrdtProfilePlan, DiffEngine, DiffProfile, DiffProfilePlan, EngineOptions, EngineProfileSettings, EqualityProfilePlan, HistoryProfilePlan, MultiSchema, ObjectSchema, ProfilePlans, RecordArraySchema, Schema, SchemaField, SingleSchema, StateProfilePlan, TrainingSample } from './types.js';
+export type { CodecProfilePlan, CrdtProfilePlan, DeterminismProfilePlan, DiffEngine, DiffProfile, DiffProfilePlan, EngineOptions, EngineProfileSettings, EqualityProfilePlan, HistoryProfilePlan, MultiSchema, NumericQuantizationMode, NumericQuantizationRule, ObjectSchema, ProfilePlans, RecordArraySchema, Schema, SchemaField, SingleSchema, StateProfilePlan, TrainingSample } from './types.js';
