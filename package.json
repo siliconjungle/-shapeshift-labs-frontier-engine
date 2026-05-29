@@ -47,7 +47,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@shapeshift-labs/frontier": "0.1.8",
+    "@shapeshift-labs/frontier": "0.1.9",
     "@shapeshift-labs/frontier-codec": "0.1.4"
   },
   "scripts": {
