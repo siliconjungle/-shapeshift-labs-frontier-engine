@@ -354,7 +354,7 @@
   {
     "id": "frontier-lang-cli",
     "name": "@shapeshift-labs/frontier-lang-cli",
-    "role": "Command line interface for parsing, checking, hashing, and emitting Frontier Lang projects.",
+    "role": "Command line interface for parsing, checking, hashing, emitting, native source import/projection, semantic slicing, and corpus roundtrip evidence for Frontier Lang projects.",
     "npmUrl": "https://www.npmjs.com/package/@shapeshift-labs/frontier-lang-cli",
     "repoName": "siliconjungle/-shapeshift-labs-frontier-lang-cli",
     "repoUrl": "https://github.com/siliconjungle/-shapeshift-labs-frontier-lang-cli"
@@ -718,5 +718,13 @@
     "npmUrl": "https://www.npmjs.com/package/@shapeshift-labs/frontier-game",
     "repoName": "siliconjungle/-shapeshift-labs-frontier-game",
     "repoUrl": "https://github.com/siliconjungle/-shapeshift-labs-frontier-game"
+  },
+  {
+    "id": "loom",
+    "name": "@shapeshift-labs/loom",
+    "role": "Repo-level semantic collaboration CLI for .loom workspaces, including init, scan, status, graph snapshots, projection plans, Frontier Lang delegation, Frontier Swarm delegation, and Frontier Framework delegation.",
+    "npmUrl": "https://www.npmjs.com/package/@shapeshift-labs/loom",
+    "repoName": "siliconjungle/-shapeshift-labs-loom",
+    "repoUrl": "https://github.com/siliconjungle/-shapeshift-labs-loom"
   }
 ]
